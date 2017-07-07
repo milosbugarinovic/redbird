@@ -25,7 +25,7 @@
   "dependencies": {
     "bluebird": "3.4.0",
     "bunyan": "1.8.1",
-    "dolphin": "git@github.com:beecode-rs/dolphin.git",
+    "dolphin": "https://github.com/beecode-rs/dolphin.git",
     "http-proxy": "1.14.0",
     "le-challenge-fs": "2.0.4",
     "le-store-certbot": "2.0.3",
