@@ -296,9 +296,9 @@ or by passing a JSON object containing multiple hosts, and Redbird options:
 
 
 ## Cluster support
-Redbird support automatic support for node cluster. Just specify in the options object
-the number of processes that you want Redbird to use. Redbird will automatically re-start
-any thread thay may crash automatically, increasing even more its reliability.
+Redbird supports automatic node cluster generation. To use, just specify the number
+of processes that you want Redbird to use in the options object. Redbird will automatically
+restart any thread that crashes, increasing reliability.
 
 ```js
 var redbird = new require('redbird')({
@@ -323,7 +323,8 @@ var redbird = new require('redbird')({
 
 With custom resolvers, you can decide how the proxy server handles request. Custom resolvers allow you to extend Redbird considerably. With custom resolvers, you can perform the following:
 
-- Do path-based routing
+- Do path-based routing.
+- Do headers based routing.
 - Do wildcard domain routing.
 - Use variable upstream servers based on availability, for example in conjunction with Etcd or any other service discovery platform.
 - And more.
@@ -348,7 +349,7 @@ Resolvers can be defined when initializing the proxy object with the `resolvers`
 
 ```javascript
  // for every URL path that starts with /api/, send request to upstream API service
- var customResolver1 = function(host, url) {
+ var customResolver1 = function(host, url, req) {
    if(/^\/api\//.test(url)){
       return 'http://127.0.0.1:8888';
    }
@@ -362,7 +363,7 @@ Resolvers can be defined when initializing the proxy object with the `resolvers`
     resolvers: [
     customResolver1,
     // uses the same priority as default resolver, so will be called after default resolver
-    function(host, url) {
+    function(host, url, req) {
       if(/\.example\.com/.test(host)){
         return 'http://127.0.0.1:9999'
       }
@@ -376,7 +377,7 @@ Resolvers can be defined when initializing the proxy object with the `resolvers`
 You can add or remove resolvers at runtime, this is useful in situations where your upstream is tied to a service discovery service system.
 
 ```javascript
-var topPriority = function(host, url) {
+var topPriority = function(host, url, req) {
   return /app\.example\.com/.test(host) ? {
     // load balanced
     url: [
@@ -395,6 +396,44 @@ setTimeout(function() {
   proxy.removeResolver(topPriority);
 }, 600000);
 ```
+
+## Replacing the default HTTP/HTTPS server modules
+
+By passing `serverModule: module` or `ssl: {serverModule : module}` you can override the default http/https
+servers used to listen for connections with another module.
+
+One application for this is to enable support for PROXY protocol: This is useful if you want to use a module like
+[findhit-proxywrap](https://github.com/findhit/proxywrap) to enable support for the
+[PROXY protocol](http://www.haproxy.org/download/1.8/doc/proxy-protocol.txt).
+
+
+PROXY protocol is used in tools like HA-Proxy, and can be optionally enabled in Amazon ELB load balancers to pass the
+original client IP when proxying TCP connections (similar to an X-Forwarded-For header, but for raw TCP). This is useful
+if you want to run redbird on AWS behind an ELB load balancer, but have redbird terminate any HTTPS connections so you
+can have SNI/Let's Encrypt/HTTP2support. With this in place Redbird will see the client's IP address rather
+than the load-balancer's, and pass this through in an X-Forwarded-For header.
+
+````javascript
+//Options for proxywrap. This means the proxy will also respond to regular HTTP requests without PROXY information as well.
+proxy_opts = {strict: false};
+proxyWrap = require('findhit-proxywrap');
+var opts = {
+    port: process.env.HTTP_PORT,
+    serverModule = proxyWrap.proxy( require('http'), proxy_opts),
+    ssl: {
+        //Do this if you want http2:
+        http2: true,
+        serverModule = proxyWrap.proxy(require('spdy').server, proxy_opts),
+        //Do this if you only want regular https
+        // serverModule = proxyWrap.proxy( require('http'), proxy_opts),
+        port: process.env.HTTPS_PORT,
+    }
+}
+
+// Create the proxy
+var proxy = require('redbird')(opts);
+````
+
 
 ## Roadmap
 
@@ -431,18 +470,22 @@ __Arguments__
     		cert: certPath,
     		ca: caPath // Optional.
             redirect: true, // Disable HTTPS autoredirect to this route.
+            http2: false, //Optional, setting to true enables http2/spdy support
+            serverModule : require('https') // Optional, override the https server module used to listen for https or http2 connections.  Default is require('https') or require('spdy')
     	}
         bunyan: {Object} Bunyan options. Check [bunyan](https://github.com/trentm/node-bunyan) for info.
         If you want to disable bunyan, just set this option to false. Keep in mind that
         having logs enabled incours in a performance penalty of about one order of magnitude per request.
         resolvers: {Function | Array}  a list of custom resolvers. Can be a single function or an array of functions. See more details about resolvers above.
+        serverModule : {Module} Optional - Override the http server module used to listen for http connections.  Default is require('http')
 	}
 ```
 
 ---------------------------------------
 
 <a name="register"/>
-#### Redbird##register(src, target, opts)
+
+#### Redbird::register(src, target, opts)
 
 Register a new route. As soon as this method is called, the proxy will
 start routing the sources to the given targets.
@@ -469,7 +512,8 @@ __Arguments__
 ---------------------------------------
 
 <a name="unregister"/>
-#### Redbird##unregister(src, [target])
+
+#### Redbird.unregister(src, [target])
 
  Unregisters a route. After calling this method, the given route will not
  be proxied anymore.
@@ -485,7 +529,8 @@ __Arguments__
 ---------------------------------------
 
 <a name="notFound"/>
-#### Redbird##notFound(callback)
+
+#### Redbird.notFound(callback)
 
  Gives Redbird a callback function with two parameters, the HTTP request
  and response objects, respectively, which will be called when a proxy route is
@@ -509,7 +554,8 @@ __Arguments__
 ---------------------------------------
 
 <a name="close"/>
-#### Redbird##close()
+
+#### Redbird.close()
 
  Close the proxy stopping all the incoming connections.
 
